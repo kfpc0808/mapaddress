@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📍 지점 지도 뷰어</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=1ada66397913195f6a7512567faa5fac&libraries=services&autoload=false"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8fafc;--bg2:#fff;--bg3:#f1f5f9;--border:#e2e8f0;--text:#1e293b;--text2:#64748b;--text3:#94a3b8;--accent:#ea580c;--accent2:#f97316;--accent-bg:rgba(249,115,22,.08);--green:#16a34a;--red:#ef4444}
+[data-theme="dark"]{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--border:#334155;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--accent:#f97316;--accent2:#fb923c;--accent-bg:rgba(249,115,22,.12)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;transition:background .3s,color .3s}
+.top-bar{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.top-bar h1{font-size:1.1rem;font-weight:800;color:var(--accent);white-space:nowrap}
+.top-bar .right{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:.78rem;color:var(--text2)}
+.badge{background:var(--accent);color:#fff;font-weight:700;padding:2px 10px;border-radius:99px;font-size:.72rem}
+.top-btn{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.78rem;color:var(--text2);transition:all .2s;font-family:inherit;white-space:nowrap}
+.top-btn:hover{border-color:var(--accent);color:var(--accent)}
+.main{display:flex;flex:1;min-height:0}
+.sidebar{width:400px;display:flex;flex-direction:column;background:var(--bg2);border-right:1px solid var(--border);flex-shrink:0;transition:width .3s,opacity .3s}
+.sidebar.hidden{width:0;overflow:hidden;border:none;opacity:0;pointer-events:none}
+.sidebar-toggle{position:absolute;top:50%;left:0;transform:translateY(-50%);z-index:1000;background:var(--bg2);border:1px solid var(--border);border-left:none;border-radius:0 8px 8px 0;padding:12px 4px;cursor:pointer;font-size:.9rem;color:var(--text3);box-shadow:2px 0 6px rgba(0,0,0,.08);font-family:inherit;line-height:1;transition:all .2s}
+.sidebar-toggle:hover{color:var(--accent);background:var(--accent-bg)}
+.panel-top{flex-shrink:0;overflow:hidden;transition:max-height .3s ease}
+.panel-top.collapsed{max-height:0!important}
+.toggle-bar{display:none;padding:7px 16px;border-bottom:1px solid var(--border);flex-shrink:0;cursor:pointer;background:var(--bg3);user-select:none}
+.toggle-bar:hover{background:var(--border)}
+.toggle-bar span{font-size:.76rem;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px}
+.upload-area{padding:14px 16px;border-bottom:1px solid var(--border)}
+.drop-zone{border:2px dashed var(--border);border-radius:12px;padding:20px 16px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg)}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--accent);background:var(--accent-bg)}
+.drop-zone .icon{font-size:1.6rem;margin-bottom:4px}
+.drop-zone p{font-size:.8rem;color:var(--text2)}
+.drop-zone .sub{font-size:.7rem;color:var(--text3);margin-top:3px}
+.drop-zone .cached{color:var(--green);font-weight:700;font-size:.76rem;margin-top:4px}
+.file-input{display:none}
+.mapping-area{padding:12px 16px;border-bottom:1px solid var(--border);display:none}
+.mapping-area h3{font-size:.78rem;font-weight:700;margin-bottom:6px}
+.map-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:.76rem}
+.map-row label{width:65px;color:var(--text2);font-weight:600;flex-shrink:0}
+.map-row select{flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:.76rem;font-family:inherit}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+.btn{padding:8px 0;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.8rem;flex:1;transition:all .15s;font-family:inherit}
+.btn-go{background:linear-gradient(135deg,var(--accent),#c2410c);color:#fff}
+.btn-go:hover{filter:brightness(1.1)}
+.btn-go:disabled{opacity:.5;cursor:not-allowed}
+.btn-clear{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+.btn-test{background:var(--bg);color:var(--accent);border:2px solid var(--accent);font-size:.75rem}
+.progress-area{padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;display:none}
+.progress-bar-bg{width:100%;height:7px;background:var(--bg3);border-radius:99px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;transition:width .2s;width:0}
+.progress-text{font-size:.72rem;color:var(--text2);margin-top:4px;display:flex;justify-content:space-between}
+.progress-detail{font-size:.68rem;color:var(--text3);margin-top:2px}
+.stop-btn{margin-top:6px;padding:4px 12px;border:1px solid var(--red);border-radius:6px;background:none;color:var(--red);font-size:.72rem;cursor:pointer;font-family:inherit}
+.test-result{padding:8px 16px;border-bottom:1px solid var(--border);font-size:.75rem;display:none;flex-shrink:0}
+.test-result.ok{background:rgba(22,163,74,.08);color:var(--green)}
+.test-result.fail{background:rgba(239,68,68,.08);color:var(--red)}
+.summary-bar{display:none;padding:8px 16px;background:var(--accent-bg);border-bottom:1px solid var(--border);flex-shrink:0;font-size:.74rem;color:var(--text2);line-height:1.7}
+.summary-bar strong{color:var(--accent);font-weight:800}
+.save-link{color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline}
+.search-filter{display:none;padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+.search-filter input{width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:.76rem;font-family:inherit}
+.search-filter input:focus{outline:none;border-color:var(--accent)}
+.filter-row{display:flex;gap:4px;margin-top:5px}
+.filter-row button{padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:.7rem;cursor:pointer;font-family:inherit}
+.filter-row button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.result-list{flex:1;overflow-y:auto;padding:3px}
+.result-list::-webkit-scrollbar{width:4px}
+.result-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:9px}
+.addr-item{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:7px;cursor:pointer;transition:background .15s;font-size:.74rem;border-left:3px solid transparent}
+.addr-item:hover{background:var(--bg3)}
+.addr-item.active{background:var(--accent-bg);border-left-color:var(--accent)}
+.addr-item.fail-item{opacity:.4}
+.marker-num{min-width:25px;height:25px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:800;flex-shrink:0}
+.marker-num.fail{background:var(--red)}
+.item-text{flex:1;line-height:1.3;min-width:0}
+.item-text .company{font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.73rem}
+.item-text .addr{color:var(--text2);font-size:.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-text .count-label{color:var(--accent);font-weight:700;font-size:.66rem}
+.map-wrap{flex:1;position:relative;min-height:0}
+#map{width:100%;height:100%}
+.empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:8px;pointer-events:none;z-index:500}
+.empty-state .icon{font-size:2.5rem;opacity:.4}
+.empty-state p{font-size:.8rem}
+.custom-marker-icon{display:flex;align-items:center;justify-content:center;border-radius:50%;background:#ea580c;color:#fff;font-weight:900;font-family:'Pretendard',sans-serif;box-shadow:0 2px 8px rgba(234,88,12,.45);border:2.5px solid #fff;line-height:1;user-select:none;text-align:center}
+.leaflet-popup-content{font-family:'Pretendard',sans-serif;font-size:13px}
+.popup-company{font-size:14px;font-weight:800;color:#ea580c;margin-bottom:2px}
+.popup-branch{font-size:12px;font-weight:600;color:#1e293b;margin-bottom:6px}
+.popup-addr{font-size:11px;color:#64748b;margin-bottom:4px}
+.popup-count{font-size:14px;font-weight:800;color:#ea580c;margin-top:4px}
+.engine-info{padding:6px 16px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.7rem;color:var(--text3);flex-shrink:0}
+.engine-info strong{color:var(--green)}
+@media(max-width:768px){.main{flex-direction:column}.sidebar{width:100%;max-height:50vh}.map-wrap{flex:1;min-height:250px}}
+</style>
+</head>
+<body data-theme="light">
+<div class="top-bar">
+  <h1>📍 지점 지도 뷰어</h1>
+  <div class="right">
+    <span id="statText">엑셀 파일을 업로드하세요</span>
+    <span class="badge" id="countBadge" style="display:none">0</span>
+    <button class="top-btn" id="saveBtn" style="display:none" onclick="saveExcel()">💾 결과 저장</button>
+    <button class="top-btn" onclick="toggleTheme()">🌙 다크</button>
+  </div>
+</div>
+<div class="main">
+  <div class="sidebar">
+    <div class="toggle-bar" id="toggleBar" onclick="togglePanel()"><span><span id="toggleArrow">▼</span> <span id="toggleLabel">설정 접기</span></span></div>
+    <div class="panel-top" id="panelTop">
+      <div class="upload-area">
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <div class="icon">📂</div><p>엑셀 파일을 드래그하거나 클릭</p>
+          <div class="sub">.xlsx / .xls / .csv — 좌표 저장 파일은 즉시 표시!</div>
+        </div>
+        <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls,.csv">
+      </div>
+      <div class="mapping-area" id="mappingArea">
+        <h3>📋 컬럼 매핑</h3>
+        <div class="map-row"><label>회사명</label><select id="colCompany"></select></div>
+        <div class="map-row"><label>주소</label><select id="colAddress"></select></div>
+        <div class="map-row"><label>인원수</label><select id="colCount"></select></div>
+        <div class="map-row"><label>지점명</label><select id="colBranch"></select></div>
+        <div class="btn-row">
+          <button class="btn btn-test" onclick="testFirst()">⚡ 테스트</button>
+          <button class="btn btn-go" id="goBtn" onclick="processData()">🔍 전체 표시</button>
+          <button class="btn btn-clear" onclick="clearAll()">초기화</button>
+        </div>
+      </div>
+    </div>
+    <div class="engine-info" id="engineInfo" style="display:none"></div>
+    <div class="test-result" id="testResult"></div>
+    <div class="progress-area" id="progressArea">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-text"><span id="progressLeft">0 / 0</span><span id="progressRight">남은 시간: 계산 중...</span></div>
+      <div class="progress-detail" id="progressDetail">성공: 0 · 실패: 0</div>
+      <button class="stop-btn" onclick="stopFlag=true">⏹ 중지 (현재까지 표시)</button>
+    </div>
+    <div class="summary-bar" id="summaryBar"></div>
+    <div class="search-filter" id="searchFilter">
+      <input type="text" id="searchInput" placeholder="🔍 회사명·지점명·주소 검색..." oninput="filterList()">
+      <div class="filter-row">
+        <button class="active" onclick="setFilter('all',this)">전체</button>
+        <button onclick="setFilter('ok',this)">✅ 성공</button>
+        <button onclick="setFilter('fail',this)">❌ 실패</button>
+      </div>
+    </div>
+    <div class="result-list" id="resultList">
+      <div class="empty-state" style="position:relative;padding:40px 0"><div class="icon">📋</div><p>결과가 여기 표시됩니다</p></div>
+    </div>
+  </div>
+  <div class="map-wrap">
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="목록 숨기기/보기">◀</button>
+    <div id="map"></div>
+    <div class="empty-state" id="emptyMap"><div class="icon">🗺️</div><p>엑셀을 업로드하고 [지도에 표시]를 누르세요</p></div>
+  </div>
+</div>
+
+<script>
+let map=null,markerLayer=null,results=[],rawData=[],columns=[];
+let colMap={},currentFilter='all',panelCollapsed=false,stopFlag=false;
+let useKakao=false,kakaoReady=false;
+
+/* ── 카카오 SDK 초기화 시도 ── */
+try{
+  kakao.maps.load(()=>{kakaoReady=true;console.log('✅ Kakao Maps API 로드 성공');});
+}catch(e){console.log('⚠️ Kakao Maps API 로드 실패, Nominatim 사용');}
+
+let sidebarHidden=false;
+function toggleSidebar(){
+  sidebarHidden=!sidebarHidden;
+  document.querySelector('.sidebar').classList.toggle('hidden',sidebarHidden);
+  document.getElementById('sidebarToggle').textContent=sidebarHidden?'▶':'◀';
+  setTimeout(()=>{if(map)map.invalidateSize();},350);
+}
+
+function togglePanel(){
+  panelCollapsed=!panelCollapsed;
+  const p=document.getElementById('panelTop');
+  document.getElementById('toggleArrow').textContent=panelCollapsed?'▶':'▼';
+  document.getElementById('toggleLabel').textContent=panelCollapsed?'설정 펼치기':'설정 접기';
+  if(panelCollapsed)p.classList.add('collapsed');else p.classList.remove('collapsed');
+}
+function toggleTheme(){
+  const b=document.body;
+  if(b.dataset.theme==='light'){b.dataset.theme='dark';document.querySelectorAll('.top-btn')[1].textContent='☀️ 라이트';}
+  else{b.dataset.theme='light';document.querySelectorAll('.top-btn')[1].textContent='🌙 다크';}
+}
+
+/* ── 지도 (Leaflet + CARTO) ── */
+function initMap(){
+  map=L.map('map',{zoomControl:true}).setView([36.5,127.5],7);
+  // 타일 레이어 옵션들
+  const vworld=L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png',{attribution:'© VWorld',maxZoom:19});
+  const carto=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© CARTO © OSM',maxZoom:19,subdomains:'abcd'});
+  const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19});
+  
+  // 기본: VWorld (한국어), 실패 시 CARTO
+  vworld.addTo(map);
+  vworld.on('tileerror',function(){map.removeLayer(vworld);carto.addTo(map);});
+  
+  L.control.layers({'🇰🇷 한국어 지도':vworld,'🌍 CARTO':carto,'🗺️ OSM':osm},{},
+    {position:'topright',collapsed:true}).addTo(map);
+  markerLayer=L.layerGroup().addTo(map);
+}
+
+/* ── 파일 ── */
+const dropZone=document.getElementById('dropZone'),fileInput=document.getElementById('fileInput');
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('dragover')});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('dragover');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0])});
+fileInput.addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0])});
+
+function handleFile(file){
+  if(!file)return;
+  dropZone.innerHTML=`<div class="icon">✅</div><p style="font-weight:700;color:var(--text)">${file.name}</p><div class="sub">클릭하여 다른 파일 선택</div>`;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+    const json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+    if(!json.length){alert('데이터가 없습니다.');return;}
+    rawData=json;columns=Object.keys(json[0]);
+    if(columns.includes('_위도')&&columns.includes('_경도'))
+      dropZone.innerHTML+=`<div class="cached">⚡ 좌표 저장 파일! 즉시 표시됩니다</div>`;
+    setupMapping();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setupMapping(){
+  document.getElementById('mappingArea').style.display='block';
+  document.getElementById('toggleBar').style.display='block';
+  const ids=['colCompany','colAddress','colCount','colBranch'];
+  const hints=[['회사','보험사','company','업체'],['주소','address','소재지'],['인원','수','count','설계사'],['지점','branch','센터','지사']];
+  ids.forEach((id,i)=>{
+    const sel=document.getElementById(id);
+    sel.innerHTML='<option value="">-- 선택 --</option>'+columns.filter(c=>!c.startsWith('_')).map(c=>`<option value="${c}">${c}</option>`).join('');
+    const match=columns.find(c=>hints[i].some(h=>c.toLowerCase().includes(h))&&!c.startsWith('_'));
+    if(match)sel.value=match;
+  });
+}
+
+/* ── 지오코딩: 카카오 ── */
+function geocodeKakao(address){
+  return new Promise(resolve=>{
+    let addr=String(address).trim().replace(/\([^)]*\)/g,'').replace(/\s+/g,' ').trim();
+    if(!addr||addr.length<4){resolve({lat:0,lng:0,ok:false});return;}
+    try{
+      const gc=new kakao.maps.services.Geocoder();
+      gc.addressSearch(addr,(r,s)=>{
+        if(s===kakao.maps.services.Status.OK&&r&&r.length>0){
+          resolve({lat:+r[0].y,lng:+r[0].x,ok:true});
+        }else{
+          try{
+            new kakao.maps.services.Places().keywordSearch(addr,(r2,s2)=>{
+              if(s2===kakao.maps.services.Status.OK&&r2&&r2.length>0)
+                resolve({lat:+r2[0].y,lng:+r2[0].x,ok:true});
+              else resolve({lat:0,lng:0,ok:false});
+            });
+          }catch(e){resolve({lat:0,lng:0,ok:false});}
+        }
+      });
+    }catch(e){resolve({lat:0,lng:0,ok:false});}
+  });
+}
+
+/* ── 지오코딩: Nominatim (fallback) ── */
+async function geocodeNominatim(address){
+  let addr=String(address).trim().replace(/\([^)]*\)/g,'').replace(/,?\s*(?:지하\s*)?\d+[층호실]\s*/g,' ').replace(/\s+/g,' ').trim();
+  if(!addr||addr.length<4)return{lat:0,lng:0,ok:false};
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=kr&limit=1&q=${encodeURIComponent(addr)}`,{headers:{'Accept-Language':'ko'}});
+    if(!r.ok)return{lat:0,lng:0,ok:false};
+    const d=await r.json();
+    if(d&&d.length>0)return{lat:+d[0].lat,lng:+d[0].lon,ok:true};
+    return{lat:0,lng:0,ok:false};
+  }catch(e){return{lat:0,lng:0,ok:false};}
+}
+
+/* ── 자동 엔진 감지 테스트 ── */
+async function detectEngine(){
+  if(!kakaoReady)return'nominatim';
+  try{
+    const r=await geocodeKakao('서울특별시 중구 세종대로 110');
+    return r.ok?'kakao':'nominatim';
+  }catch(e){return'nominatim';}
+}
+
+/* ── 테스트 ── */
+async function testFirst(){
+  const cAddr=document.getElementById('colAddress').value;
+  if(!cAddr){alert('주소 컬럼을 선택해 주세요.');return;}
+  const tr=document.getElementById('testResult');
+  tr.style.display='block';tr.className='test-result';
+  tr.textContent='⏳ 엔진 감지 + 테스트 중...';
+
+  // 엔진 자동 감지
+  const engine=await detectEngine();
+  useKakao=(engine==='kakao');
+  const ei=document.getElementById('engineInfo');
+  ei.style.display='block';
+  ei.innerHTML=useKakao
+    ?'🚀 엔진: <strong>카카오</strong> (빠름, 높은 정확도)'
+    :'🌍 엔진: <strong>Nominatim</strong> (느림, 초당 1건)';
+
+  let ok=0;
+  const addrs=rawData.slice(0,3).map(r=>String(r[cAddr]||'')).filter(a=>a.length>3);
+  for(const addr of addrs){
+    const geo=useKakao?await geocodeKakao(addr):await geocodeNominatim(addr);
+    if(geo.ok)ok++;
+    await new Promise(r=>setTimeout(r,useKakao?200:1100));
+  }
+  if(ok>0){
+    tr.className='test-result ok';
+    const speed=useKakao?'초당 ~5건, 10,000건 ≈ 35분':'초당 1건, 10,000건 ≈ 3시간';
+    tr.innerHTML=`✅ 테스트 성공! ${ok}/${addrs.length}건. [전체 표시]를 눌러 진행하세요.<br><span style="font-size:.68rem;color:var(--text3)">속도: ${speed} → 좌표 저장 후 다음부터 즉시</span>`;
+  }else{
+    tr.className='test-result fail';
+    tr.innerHTML=`❌ 테스트 실패. 인터넷 연결 확인 후 재시도해 주세요.`;
+  }
+}
+
+function mSize(n){
+  if(n>=500)return[44,44,14];if(n>=200)return[40,40,13];
+  if(n>=100)return[36,36,12];if(n>=50)return[32,32,11];
+  return[26,26,10];
+}
+
+/* ── 메인 처리 ── */
+async function processData(){
+  const cAddr=document.getElementById('colAddress').value;
+  if(!cAddr){alert('주소 컬럼을 선택해 주세요.');return;}
+  colMap={company:document.getElementById('colCompany').value,address:cAddr,count:document.getElementById('colCount').value,branch:document.getElementById('colBranch').value};
+  const hasCache=columns.includes('_위도')&&columns.includes('_경도');
+
+  // 엔진 미감지 시 자동 감지
+  if(!document.getElementById('engineInfo').style.display||document.getElementById('engineInfo').style.display==='none'){
+    const engine=await detectEngine();useKakao=(engine==='kakao');
+    const ei=document.getElementById('engineInfo');ei.style.display='block';
+    ei.innerHTML=useKakao?'🚀 엔진: <strong>카카오</strong>':'🌍 엔진: <strong>Nominatim</strong>';
+  }
+
+  if(!map)initMap();
+  document.getElementById('emptyMap').style.display='none';
+  document.getElementById('goBtn').disabled=true;
+  stopFlag=false;
+  if(markerLayer)markerLayer.clearLayers();
+  results=[];
+
+  const items=[];
+  rawData.forEach((row,i)=>{
+    const addr=String(row[colMap.address]||'').trim();
+    if(!addr||addr.length<4)return;
+    const countNum=parseInt(String(colMap.count?row[colMap.count]:'').replace(/,/g,''))||0;
+    items.push({address:addr,company:colMap.company?String(row[colMap.company]||'').trim():'',count:colMap.count?row[colMap.count]:'',countNum,branch:colMap.branch?String(row[colMap.branch]||'').trim():'',_lat:hasCache?parseFloat(row['_위도'])||0:0,_lng:hasCache?parseFloat(row['_경도'])||0:0,_rowIdx:i,lat:0,lng:0,ok:false});
+  });
+  if(!items.length){alert('유효한 주소가 없습니다.');document.getElementById('goBtn').disabled=false;return;}
+  if(!panelCollapsed)togglePanel();
+
+  const progArea=document.getElementById('progressArea');
+  progArea.style.display='block';
+  document.getElementById('progressFill').style.width='0%';
+  const startTime=Date.now();
+  let okCnt=0,failCnt=0;
+  const allCached=hasCache&&items.every(it=>it._lat&&it._lng&&it._lat!==0);
+  const bounds=[];
+  const delay=useKakao?200:1100;
+
+  for(let i=0;i<items.length;i++){
+    if(stopFlag)break;
+    const item=items[i];
+
+    if(item._lat&&item._lng&&item._lat!==0&&item._lng!==0){
+      item.lat=item._lat;item.lng=item._lng;item.ok=true;okCnt++;
+    }else{
+      try{
+        const geo=useKakao?await geocodeKakao(item.address):await geocodeNominatim(item.address);
+        item.lat=geo.lat;item.lng=geo.lng;item.ok=geo.ok;
+        if(geo.ok)okCnt++;else failCnt++;
+      }catch(e){item.ok=false;failCnt++;}
+      if(!allCached&&i<items.length-1)await new Promise(r=>setTimeout(r,delay));
+    }
+
+    if(item.ok&&item.lat&&item.lng){
+      bounds.push([item.lat,item.lng]);
+      const sz=mSize(item.countNum);
+      const icon=L.divIcon({className:'',html:`<div class="custom-marker-icon" style="width:${sz[0]}px;height:${sz[0]}px;font-size:${sz[2]}px">${item.countNum||'·'}</div>`,iconSize:[sz[0],sz[0]],iconAnchor:[sz[0]/2,sz[0]/2]});
+      const mk=L.marker([item.lat,item.lng],{icon}).addTo(markerLayer);
+      mk.bindPopup(`<div class="popup-company">${item.company||''}</div>${item.branch?`<div class="popup-branch">${item.branch}</div>`:''}<div class="popup-addr">📍 ${item.address}</div>${item.countNum?`<div class="popup-count">👥 ${item.countNum.toLocaleString()}명</div>`:''}`,{maxWidth:300});
+      item._marker=mk;
+    }
+    item.index=i+1;results.push(item);
+
+    if(i%50===0||i===items.length-1||stopFlag){
+      const pct=Math.round((i+1)/items.length*100);
+      document.getElementById('progressFill').style.width=pct+'%';
+      document.getElementById('progressLeft').textContent=`${(i+1).toLocaleString()} / ${items.length.toLocaleString()}`;
+      document.getElementById('progressDetail').textContent=`✅ ${okCnt.toLocaleString()} · ❌ ${failCnt.toLocaleString()}`;
+      if(i>30&&!allCached){
+        const remain=Math.round((items.length-i-1)*((Date.now()-startTime)/1000/(i+1)));
+        const h=Math.floor(remain/3600),m=Math.floor((remain%3600)/60);
+        document.getElementById('progressRight').textContent=h>0?`남은: ~${h}시간 ${m}분`:`남은: ~${m}분`;
+      }
+      if(bounds.length>0)map.fitBounds(bounds,{padding:[30,30],maxZoom:13});
+    }
+  }
+
+  renderList();
+  const totalPeople=results.filter(r=>r.ok).reduce((s,r)=>s+r.countNum,0);
+  const sb=document.getElementById('summaryBar');sb.style.display='block';
+  sb.innerHTML=`✅ <strong>${okCnt.toLocaleString()}</strong>개 지점 · 👥 <strong>${totalPeople.toLocaleString()}</strong>명${failCnt>0?' · ❌ '+failCnt.toLocaleString()+'건':''}${stopFlag?' (중지됨)':''} <span class="save-link" onclick="saveExcel()">💾 좌표 저장 (다음에 즉시!)</span>`;
+  document.getElementById('searchFilter').style.display='block';
+  document.getElementById('statText').textContent=`${okCnt.toLocaleString()}개 지점`;
+  document.getElementById('countBadge').textContent=okCnt.toLocaleString();
+  document.getElementById('countBadge').style.display='inline';
+  document.getElementById('saveBtn').style.display='inline-block';
+  progArea.style.display='none';
+  document.getElementById('goBtn').disabled=false;
+}
+
+/* ── 리스트 ── */
+function getFiltered(){
+  let list=results;
+  if(currentFilter==='ok')list=results.filter(r=>r.ok);
+  if(currentFilter==='fail')list=results.filter(r=>!r.ok);
+  const q=(document.getElementById('searchInput')?.value||'').trim().toLowerCase();
+  if(q)list=list.filter(r=>(r.company+r.branch+r.address).toLowerCase().includes(q));
+  return list;
+}
+function renderList(){
+  const list=getFiltered(),show=list.slice(0,1000);
+  document.getElementById('resultList').innerHTML=show.map(r=>{
+    const i=results.indexOf(r);
+    return`<div class="addr-item ${r.ok?'':'fail-item'}" onclick="focusItem(${i})" id="item-${i}">
+      <div class="marker-num ${r.ok?'':'fail'}">${r.ok?(r.countNum||'·'):'✕'}</div>
+      <div class="item-text">
+        <div class="company">${r.company||r.branch||'-'}${r.branch&&r.company?' · '+r.branch:''}</div>
+        <div class="addr">${r.address}</div>
+        ${r.countNum?`<div class="count-label">👥 ${r.countNum.toLocaleString()}명</div>`:''}
+      </div>
+    </div>`;
+  }).join('')+(list.length>1000?`<div style="padding:8px;text-align:center;color:var(--text3);font-size:.7rem">외 ${(list.length-1000).toLocaleString()}건</div>`:'');
+}
+function filterList(){renderList();}
+function setFilter(f,btn){currentFilter=f;document.querySelectorAll('.filter-row button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderList();}
+function focusItem(i){const r=results[i];if(!r||!r.ok)return;map.setView([r.lat,r.lng],15);if(r._marker)r._marker.openPopup();document.querySelectorAll('.addr-item').forEach(el=>el.classList.remove('active'));const el=document.getElementById('item-'+i);if(el){el.classList.add('active');el.scrollIntoView({block:'nearest'});}}
+
+function saveExcel(){
+  if(!results.length)return;
+  const out=rawData.map((row,i)=>{const r=results.find(x=>x._rowIdx===i);const nr={...row};if(r){nr['_위도']=r.ok?r.lat:'';nr['_경도']=r.ok?r.lng:'';nr['_변환결과']=r.ok?'성공':'실패';}return nr;});
+  const ws=XLSX.utils.json_to_sheet(out);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Sheet1');XLSX.writeFile(wb,'지점목록_좌표포함.xlsx');
+}
+
+function clearAll(){
+  fileInput.value='';rawData=[];columns=[];results=[];currentFilter='all';stopFlag=true;
+  if(markerLayer)markerLayer.clearLayers();
+  if(panelCollapsed)togglePanel();
+  ['mappingArea','summaryBar','progressArea','searchFilter','toggleBar','engineInfo'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('testResult').style.display='none';
+  document.getElementById('saveBtn').style.display='none';
+  document.getElementById('resultList').innerHTML='<div class="empty-state" style="position:relative;padding:40px 0"><div class="icon">📋</div><p>결과가 여기 표시됩니다</p></div>';
+  document.getElementById('statText').textContent='엑셀 파일을 업로드하세요';
+  document.getElementById('countBadge').style.display='none';
+  dropZone.innerHTML='<div class="icon">📂</div><p>엑셀 파일을 드래그하거나 클릭</p><div class="sub">.xlsx / .xls / .csv — 좌표 저장 파일은 즉시 표시!</div>';
+  if(map)map.setView([36.5,127.5],7);
+  document.getElementById('emptyMap').style.display='flex';
+}
+
+initMap();
+</script>
+</body>
+</html>
