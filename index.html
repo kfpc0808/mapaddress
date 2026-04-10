@@ -87,6 +87,8 @@ body{font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:va
 .empty-state .icon{font-size:2.5rem;opacity:.4}
 .empty-state p{font-size:.8rem}
 .custom-marker-icon{display:flex;align-items:center;justify-content:center;border-radius:50%;background:#ea580c;color:#fff;font-weight:900;font-family:'Pretendard',sans-serif;box-shadow:0 2px 8px rgba(234,88,12,.45);border:2.5px solid #fff;line-height:1;user-select:none;text-align:center}
+.marker-wrap{position:relative;display:flex;align-items:center;gap:2px}
+.marker-label{background:rgba(30,41,59,.85);color:#fff;font-size:9px;font-weight:600;padding:2px 5px;border-radius:4px;white-space:nowrap;font-family:'Pretendard',sans-serif;max-width:100px;overflow:hidden;text-overflow:ellipsis;line-height:1.2;pointer-events:none}
 .leaflet-popup-content{font-family:'Pretendard',sans-serif;font-size:13px}
 .popup-company{font-size:14px;font-weight:800;color:#ea580c;margin-bottom:2px}
 .popup-branch{font-size:12px;font-weight:600;color:#1e293b;margin-bottom:6px}
@@ -112,6 +114,17 @@ body{font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:va
     <div class="toggle-bar" id="toggleBar" onclick="togglePanel()"><span><span id="toggleArrow">▼</span> <span id="toggleLabel">설정 접기</span></span></div>
     <div class="panel-top" id="panelTop">
       <div class="upload-area">
+        <!-- GitHub 파일 선택 -->
+        <div id="githubArea" style="margin-bottom:10px">
+          <div style="font-size:.76rem;font-weight:700;color:var(--text2);margin-bottom:5px">📁 서버 파일 선택</div>
+          <div style="display:flex;gap:6px">
+            <select id="githubFiles" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:.76rem;font-family:inherit">
+              <option value="">로딩 중...</option>
+            </select>
+            <button class="btn btn-go" style="flex:none;padding:6px 14px;font-size:.75rem" onclick="loadGithubFile()">불러오기</button>
+          </div>
+        </div>
+        <div style="text-align:center;color:var(--text3);font-size:.7rem;margin-bottom:8px">── 또는 직접 업로드 ──</div>
         <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
           <div class="icon">📂</div><p>엑셀 파일을 드래그하거나 클릭</p>
           <div class="sub">.xlsx / .xls / .csv — 좌표 저장 파일은 즉시 표시!</div>
@@ -155,7 +168,7 @@ body{font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:va
   <div class="map-wrap">
     <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="목록 숨기기/보기">◀</button>
     <div id="map"></div>
-    <div class="empty-state" id="emptyMap"><div class="icon">🗺️</div><p>엑셀을 업로드하고 [지도에 표시]를 누르세요</p></div>
+    <div class="empty-state" id="emptyMap"><div class="icon">🗺️</div><p>파일을 선택하고 [지도에 표시]를 누르세요</p></div>
   </div>
 </div>
 
@@ -206,6 +219,55 @@ function initMap(){
     {position:'topright',collapsed:true}).addTo(map);
   markerLayer=L.layerGroup().addTo(map);
 }
+
+/* ── GitHub 파일 목록 로드 ── */
+const GITHUB_REPO='kfpc0808/mapaddress';
+const GITHUB_API=`https://api.github.com/repos/${GITHUB_REPO}/contents`;
+
+async function loadGithubFileList(){
+  const sel=document.getElementById('githubFiles');
+  try{
+    const resp=await fetch(GITHUB_API);
+    if(!resp.ok)throw new Error('API 실패');
+    const files=await resp.json();
+    const xlsxFiles=files.filter(f=>f.name.match(/\.(xlsx|xls|csv)$/i));
+    if(xlsxFiles.length===0){sel.innerHTML='<option value="">엑셀 파일 없음</option>';return;}
+    sel.innerHTML='<option value="">-- 파일 선택 --</option>'+xlsxFiles.map(f=>`<option value="${f.download_url}">${f.name} (${(f.size/1024).toFixed(0)}KB)</option>`).join('');
+  }catch(e){
+    sel.innerHTML='<option value="">파일 목록 로드 실패</option>';
+    console.log('GitHub API 오류:',e);
+  }
+}
+
+async function loadGithubFile(){
+  const sel=document.getElementById('githubFiles');
+  const url=sel.value;
+  if(!url){alert('파일을 선택해 주세요.');return;}
+  const fileName=sel.options[sel.selectedIndex].text.split(' (')[0];
+  dropZone.innerHTML=`<div class="icon">⏳</div><p style="color:var(--text2)">다운로드 중... ${fileName}</p>`;
+  try{
+    const resp=await fetch(url);
+    const blob=await resp.blob();
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      if(!json.length){alert('데이터가 없습니다.');return;}
+      rawData=json;columns=Object.keys(json[0]);
+      dropZone.innerHTML=`<div class="icon">✅</div><p style="font-weight:700;color:var(--text)">${fileName}</p><div class="sub">서버에서 불러옴</div>`;
+      if(columns.includes('_위도')&&columns.includes('_경도'))
+        dropZone.innerHTML+=`<div class="cached">⚡ 좌표 저장 파일! 즉시 표시됩니다</div>`;
+      setupMapping();
+    };
+    reader.readAsArrayBuffer(blob);
+  }catch(e){
+    dropZone.innerHTML=`<div class="icon">❌</div><p style="color:var(--red)">다운로드 실패</p>`;
+    alert('파일 다운로드에 실패했습니다.');
+  }
+}
+
+// 페이지 로드 시 파일 목록 가져오기
+loadGithubFileList();
 
 /* ── 파일 ── */
 const dropZone=document.getElementById('dropZone'),fileInput=document.getElementById('fileInput');
@@ -387,7 +449,8 @@ async function processData(){
     if(item.ok&&item.lat&&item.lng){
       bounds.push([item.lat,item.lng]);
       const sz=mSize(item.countNum);
-      const icon=L.divIcon({className:'',html:`<div class="custom-marker-icon" style="width:${sz[0]}px;height:${sz[0]}px;font-size:${sz[2]}px">${item.countNum||'·'}</div>`,iconSize:[sz[0],sz[0]],iconAnchor:[sz[0]/2,sz[0]/2]});
+      const branchLabel=item.branch?(item.branch.length>12?item.branch.slice(0,12)+'…':item.branch):'';
+      const icon=L.divIcon({className:'',html:`<div class="marker-wrap"><div class="custom-marker-icon" style="width:${sz[0]}px;height:${sz[0]}px;font-size:${sz[2]}px">${item.countNum||'·'}</div>${branchLabel?`<div class="marker-label">${branchLabel}</div>`:''}</div>`,iconSize:[sz[0]+105,sz[0]],iconAnchor:[sz[0]/2,sz[0]/2]});
       const mk=L.marker([item.lat,item.lng],{icon}).addTo(markerLayer);
       mk.bindPopup(`<div class="popup-company">${item.company||''}</div>${item.branch?`<div class="popup-branch">${item.branch}</div>`:''}<div class="popup-addr">📍 ${item.address}</div>${item.countNum?`<div class="popup-count">👥 ${item.countNum.toLocaleString()}명</div>`:''}`,{maxWidth:300});
       item._marker=mk;
